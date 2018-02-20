@@ -364,6 +364,7 @@ def update_from_target_branch_and_push(
         # and likely explains any previous failure, so it will better to just
         # raise a GitError
         if source_branch != 'master':
+            repo.checkout_branch('master')
             repo.remove_branch(source_branch)
         else:
             assert source_repo_url is not None
