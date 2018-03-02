@@ -15,7 +15,7 @@ MERGE_ERROR_MSG = {
     'WIP': 'Is marked as Work-In-Progress.',
     'STATE_NOT_OK': 'Is in %s state.',
     'SQUASH_AND_TRAILERS': 'Is marked as auto-squash but trailers are enabled.',
-    'CI_NOT_OK': 'Has unsuccessfull CI status: %s.',
+    'CI_NOT_OK': 'Has unsuccessful CI status: %s.',
     'CI_TIMEOUT': 'CI is taking too long.',
     'CHANGED': 'The %s has changed.',
 }
@@ -30,10 +30,14 @@ class MergeError(Exception):
         self.message_key = message_key
 
     def log_str(self):
-        return 'MR !%s: %s' % (self.mr_iid. self)
+        return 'MR !%s: %s' % (self.mr_iid, self)
 
     def comment_str(self):
         return 'Sorry, %s' % self
+
+
+class PreMergeError(Exception):
+    pass
 
 
 class BatchMergeJob:
@@ -140,7 +144,7 @@ class BatchMergeJob:
             raise MergeError(
                 mr_iid=merge_request.iid,
                 message_key=msg_key,
-                message=MERGE_ERROR_MSG[msg_key].format(state),
+                message=MERGE_ERROR_MSG[msg_key] % state,
             )
         approvals = merge_request.fetch_approvals()
         if not approvals.sufficient:
@@ -176,12 +180,12 @@ class BatchMergeJob:
                 raise MergeError(
                     mr_iid=merge_request.iid,
                     message_key=msg_key,
-                    message=MERGE_ERROR_MSG[msg_key].format(ci_status),
+                    message=MERGE_ERROR_MSG[msg_key] % ci_status,
                 )
 
-    def get_meargeable_mrs(self, merge_requests):
+    def get_mergeable_mrs(self, merge_requests):
         log.info('Filtering mergeable MRs')
-        meargeable_mrs = []
+        mergeable_mrs = []
         for merge_request in merge_requests:
             try:
                 self.ensure_mergeable_mr(merge_request)
@@ -189,8 +193,8 @@ class BatchMergeJob:
                 log.warning('%s - Skipping it!', ex.log_str())
                 continue
             else:
-                meargeable_mrs.append(merge_request)
-        return meargeable_mrs
+                mergeable_mrs.append(merge_request)
+        return mergeable_mrs
 
     def fetch_mr(self, merge_request):
         # This method expects MR's source project to be different from target project
@@ -245,7 +249,7 @@ class BatchMergeJob:
         )
 
     def ensure_mr_not_changed(self, merge_request):
-        log.info('Ensuring MR !%s did not changed', merge_request.iid)
+        log.info('Ensuring MR !%s did not change', merge_request.iid)
         changed_mr = MergeRequest.fetch_by_iid(
             merge_request.project_id,
             merge_request.iid,
@@ -256,31 +260,31 @@ class BatchMergeJob:
             raise MergeError(
                 mr_iid=merge_request.iid,
                 message_key=msg_key,
-                message=MERGE_ERROR_MSG[msg_key].format('source branch'),
+                message=MERGE_ERROR_MSG[msg_key] % 'source branch',
             )
         if changed_mr.source_project_id != merge_request.source_project_id:
             raise MergeError(
                 mr_iid=merge_request.iid,
                 message_key=msg_key,
-                message=MERGE_ERROR_MSG[msg_key].format('source project id'),
+                message=MERGE_ERROR_MSG[msg_key] % 'source project id',
             )
         if changed_mr.target_branch != merge_request.target_branch:
             raise MergeError(
                 mr_iid=merge_request.iid,
                 message_key=msg_key,
-                message=MERGE_ERROR_MSG[msg_key].format('target branch'),
+                message=MERGE_ERROR_MSG[msg_key] % 'target branch',
             )
         if changed_mr.target_project_id != merge_request.target_project_id:
             raise MergeError(
                 mr_iid=merge_request.iid,
                 message_key=msg_key,
-                message=MERGE_ERROR_MSG[msg_key].format('target project id'),
+                message=MERGE_ERROR_MSG[msg_key] % 'target project id',
             )
         if changed_mr.sha != merge_request.sha:
             raise MergeError(
                 mr_iid=merge_request.iid,
                 message_key=msg_key,
-                message=MERGE_ERROR_MSG[msg_key].format('SHA'),
+                message=MERGE_ERROR_MSG[msg_key] % 'SHA',
             )
 
     def add_trailers(self, merge_request):
@@ -413,7 +417,11 @@ class BatchMergeJob:
         # take it's target branch and batch all MRs with that target branch
         target_branch = self._merge_requests[0].target_branch
         merge_requests = self.get_mrs_with_common_target_branch(target_branch)
-        merge_requests = self.get_meargeable_mrs(merge_requests)
+        merge_requests = self.get_mergeable_mrs(merge_requests)
+        if not merge_requests:
+            # No merge requests are ready to be merged. Let's raise an error
+            #  to do a basic job, as the rebase there might fix it.
+            raise PreMergeError('All MRs are currently unmergeable!')
 
         # Save the sha of remote <target_branch> so we can use it to make sure
         # the remote wasn't changed while we're testing against it
