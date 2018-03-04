@@ -387,7 +387,7 @@ class TestUpdateAndAccept(object):
                 dict(sha=rewritten_sha, should_remove_source_branch=True, merge_when_pipeline_succeeds=True),
             ),
             Error(marge.gitlab.MethodNotAllowed(405, {'message': '405 Method Not Allowed'})),
-            from_state='passed', to_state='rejected_for_misterious_reasons',
+            from_state='passed', to_state='rejected_for_mysterious_reasons',
         )
         message = "Gitlab refused to merge this request and I don't know why!"
         with patch.object(
@@ -398,7 +398,7 @@ class TestUpdateAndAccept(object):
             with mocklab.expected_failure(message):
                 job = self.make_job()
                 job.execute()
-        assert api.state == 'rejected_for_misterious_reasons'
+        assert api.state == 'rejected_for_mysterious_reasons'
         assert api.notes == ["I couldn't merge this branch: %s" % message]
 
     def test_wont_merge_wip_stuff(self, unused_time_sleep):
