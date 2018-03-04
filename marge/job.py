@@ -113,20 +113,25 @@ class MergeJob(object):
             )
         return sha
 
-    def get_mr_ci_status(self, merge_request):
+    def get_mr_ci_status(self, merge_request, commit_sha=None):
+        if commit_sha is None:
+            commit_sha = merge_request.sha
         return Commit.fetch_by_id(
             merge_request.source_project_id,
-            merge_request.sha,
+            commit_sha,
             self._api,
         ).status
 
-    def wait_for_ci_to_pass(self, merge_request):
+    def wait_for_ci_to_pass(self, merge_request, commit_sha=None):
         time_0 = datetime.utcnow()
         waiting_time_in_secs = 10
 
+        if commit_sha is None:
+            commit_sha = merge_request.sha
+
         log.info('Waiting for CI to pass for MR !%s', merge_request.iid)
         while datetime.utcnow() - time_0 < self._options.ci_timeout:
-            ci_status = self.get_mr_ci_status(merge_request)
+            ci_status = self.get_mr_ci_status(merge_request, commit_sha=commit_sha)
             if ci_status == 'success':
                 log.info('CI for MR !%s passed', merge_request.iid)
                 return
