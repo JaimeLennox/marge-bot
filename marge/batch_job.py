@@ -219,6 +219,8 @@ class BatchMergeJob(MergeJob):
             batch_mr = self.create_batch_mr(
                 target_branch=target_branch,
             )
+            for merge_request in working_merge_requests:
+                merge_request.comment('Attempting to batch as part of !{}'.format(batch_mr.iid))
             self.wait_for_ci_to_pass(batch_mr)
         for merge_request in working_merge_requests:
             try:
