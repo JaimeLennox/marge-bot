@@ -1,9 +1,11 @@
 import logging as log
+from time import sleep
 
 from . import git
 from .commit import Commit
 from .job import MergeJob, CannotMerge
 from .merge_request import MergeRequest
+from .pipeline import Pipeline
 
 
 class CannotBatch(Exception):
@@ -151,8 +153,22 @@ class BatchMergeJob(MergeJob):
         # Don't force push in case the remote has changed.
         self._repo.push(merge_request.target_branch, force=False)
 
+        sleep(2)
+
         # At this point Gitlab should have recognised the MR as being accepted.
         log.info('Successfully merged MR !%s', merge_request.iid)
+
+        params = {
+            'status': 'running',
+            'ref': merge_request.source_branch,
+        }
+        pipelines = Pipeline.fetch_all_pipelines(
+            api=self._api,
+            project_id=merge_request.source_project_id,
+            params=params,
+        )
+        for pipeline in pipelines:
+            pipeline.cancel()
 
         return final_sha
 
