@@ -220,8 +220,18 @@ class BatchMergeJob(MergeJob):
                 target_branch=target_branch,
             )
             for merge_request in working_merge_requests:
-                merge_request.comment('Attempting to batch as part of !{}'.format(batch_mr.iid))
-            self.wait_for_ci_to_pass(batch_mr)
+                merge_request.comment('I will attempt to batch this MR (!{})...'.format(batch_mr.iid))
+            try:
+                self.wait_for_ci_to_pass(batch_mr)
+            except CannotMerge as err:
+                for merge_request in working_merge_requests:
+                    merge_request.comment(
+                        'Batch MR !{batch_mr_iid} failed: {error} I will retry later...'.format(
+                            batch_mr_iid=batch_mr.iid,
+                            error=err.reason,
+                        ),
+                    )
+                raise
         for merge_request in working_merge_requests:
             try:
                 # FIXME: this should probably be part of the merge request
