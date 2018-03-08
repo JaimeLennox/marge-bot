@@ -1,3 +1,4 @@
+# pylint: disable=too-many-branches,too-many-statements
 import logging as log
 from time import sleep
 
