@@ -232,6 +232,8 @@ class BatchMergeJob(MergeJob):
                 continue
             else:
                 working_merge_requests.append(merge_request)
+        if len(working_merge_requests) <= 1:
+            raise CannotBatch('not enough ready merge requests')
         if self._project.only_allow_merge_if_pipeline_succeeds:
             # This switches git to <batch> branch
             self.push_batch()
