@@ -3,19 +3,104 @@ from unittest.mock import ANY, call, Mock, patch
 
 import pytest
 
+import marge.git
+import marge.project
+import marge.user
 from marge.batch_job import BatchMergeJob, CannotBatch
+from marge.gitlab import GET
 from marge.job import CannotMerge, MergeJobOptions
+from marge.merge_request import MergeRequest
+
+import tests.test_approvals as test_approvals
+import tests.test_commit as test_commit
+import tests.test_project as test_project
+import tests.test_user as test_user
+from tests.gitlab_api_mock import Api as ApiMock, Ok
+
+
+def _commit(commit_id, status):
+    return {
+        'id': commit_id,
+        'short_id': commit_id,
+        'author_name': 'J. Bond',
+        'author_email': 'jbond@mi6.gov.uk',
+        'message': 'Shaken, not stirred',
+        'status': status,
+    }
+
+
+class MockLab(object):
+    def __init__(self, gitlab_url=None):
+        self.gitlab_url = gitlab_url = gitlab_url or 'http://git.example.com'
+        self.api = api = ApiMock(gitlab_url=gitlab_url, auth_token='no-token', initial_state='initial')
+
+        api.add_transition(GET('/version'), Ok({'version': '9.2.3-ee'}))
+
+        self.user_info = dict(test_user.INFO)
+        self.user_id = self.user_info['id']
+        api.add_user(self.user_info, is_current=True)
+
+        self.project_info = dict(test_project.INFO)
+        api.add_project(self.project_info)
+
+        self.commit_info = dict(test_commit.INFO)
+        api.add_commit(self.project_info['id'], self.commit_info)
+
+        self.author_id = 234234
+        self.merge_request_info = {
+            'id':  53,
+            'iid': 54,
+            'title': 'a title',
+            'project_id': 1234,
+            'author': {'id': self.author_id},
+            'assignee': {'id': self.user_id},
+            'approved_by': [],
+            'state': 'opened',
+            'sha': self.commit_info['id'],
+            'source_project_id': 1234,
+            'target_project_id': 1234,
+            'source_branch': 'useless_new_feature',
+            'target_branch': 'master',
+            'work_in_progress': False,
+            'web_url': 'http://git.example.com/group/project/merge_request/666',
+        }
+        api.add_merge_request(self.merge_request_info)
+
+        self.initial_master_sha = '505e'
+        self.approvals_info = dict(
+            test_approvals.INFO,
+            id=self.merge_request_info['id'],
+            iid=self.merge_request_info['iid'],
+            project_id=self.merge_request_info['project_id'],
+            approvals_left=0,
+        )
+        api.add_approvals(self.approvals_info)
+        api.add_transition(
+            GET('/projects/1234/repository/branches/master'),
+            Ok({'commit': {'id': self.initial_master_sha}}),
+        )
 
 
 class TestBatchJob(object):
+    def setup_method(self, _method):
+        self.mocklab = MockLab()
+        self.api = self.mocklab.api
+
     def get_batch_merge_job(self, **batch_merge_kwargs):
+        api, mocklab = self.api, self.mocklab
+
+        project_id = mocklab.project_info['id']
+        merge_request_iid = mocklab.merge_request_info['iid']
+
+        merge_request = MergeRequest.fetch_by_iid(project_id, merge_request_iid, api)
+
         params = {
-            'api': Mock(),
-            'user': Mock(),
-            'project': Mock(),
-            'merge_requests': Mock(),
-            'repo': Mock(),
+            'api': api,
+            'user': marge.user.User.myself(self.api),
+            'project': marge.project.Project.fetch_by_id(project_id, api),
+            'repo': Mock(marge.git.Repo),
             'options': MergeJobOptions.default(),
+            'merge_requests': [merge_request]
         }
         params.update(batch_merge_kwargs)
         return BatchMergeJob(**params)
@@ -128,16 +213,13 @@ class TestBatchJob(object):
                 batch_merge_job._api,
             )
 
-    @pytest.mark.skip('Needs API')
     def test_fuse_mr_when_target_branch_was_moved(self):
         batch_merge_job = self.get_batch_merge_job()
         merge_request = Mock(target_branch='master')
-        with pytest.raises(AssertionError):
+        with pytest.raises(CannotBatch) as exc_info:
             batch_merge_job.accept_mr(merge_request, 'abc')
-        batch_merge_job._repo.fetch.assert_called_once_with('origin')
-        batch_merge_job._repo.get_commit_hash.assert_called_once_with(
-            'origin/%s' % merge_request.target_branch,
-        )
+        # FIXME: should use mocklab.expected_failure and assert on notes
+        assert str(exc_info.value) == 'Someone was naughty and by-passed marge'
 
     @pytest.mark.skip('Needs API')
     def test_fuse_mr_when_source_branch_was_moved(self):
