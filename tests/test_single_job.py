@@ -12,12 +12,7 @@ import marge.single_merge_job
 import marge.user
 from marge.gitlab import GET, PUT
 from marge.merge_request import MergeRequest
-
-import tests.test_approvals as test_approvals
-import tests.test_commit as test_commit
-import tests.test_project as test_project
-import tests.test_user as test_user
-from tests.gitlab_api_mock import Api as ApiMock, Error, Ok
+from tests.gitlab_api_mock import Error, Ok, MockLab
 
 
 def _commit(commit_id, status):
@@ -40,44 +35,10 @@ def _pipeline(sha1, status):
     }
 
 
-class MockLab(object):
+class SingleJobMockLab(MockLab):
     def __init__(self, gitlab_url=None):
-        self.gitlab_url = gitlab_url = gitlab_url or 'http://git.example.com'
-        self.api = api = ApiMock(gitlab_url=gitlab_url, auth_token='no-token', initial_state='initial')
-
-        api.add_transition(GET('/version'), Ok({'version': '9.2.3-ee'}))
-
-        self.user_info = dict(test_user.INFO)
-        self.user_id = self.user_info['id']
-        api.add_user(self.user_info, is_current=True)
-
-        self.project_info = dict(test_project.INFO)
-        api.add_project(self.project_info)
-
-        self.commit_info = dict(test_commit.INFO)
-        api.add_commit(self.project_info['id'], self.commit_info)
-
-        self.author_id = 234234
-        self.merge_request_info = {
-            'id':  53,
-            'iid': 54,
-            'title': 'a title',
-            'project_id': 1234,
-            'author': {'id': self.author_id},
-            'assignee': {'id': self.user_id},
-            'approved_by': [],
-            'state': 'opened',
-            'sha': self.commit_info['id'],
-            'source_project_id': 1234,
-            'target_project_id': 1234,
-            'source_branch': 'useless_new_feature',
-            'target_branch': 'master',
-            'work_in_progress': False,
-            'web_url': 'http://git.example.com/group/project/merge_request/666',
-        }
-        api.add_merge_request(self.merge_request_info)
-
-        self.initial_master_sha = '505e'
+        super().__init__(gitlab_url)
+        api = self.api
         self.rewritten_sha = rewritten_sha = 'af7a'
         api.add_pipelines(
             self.project_info['id'],
@@ -108,18 +69,6 @@ class MockLab(object):
             from_state='passed', to_state='merged',
         )
         api.add_merge_request(dict(self.merge_request_info, state='merged'), from_state='merged')
-        self.approvals_info = dict(
-            test_approvals.INFO,
-            id=self.merge_request_info['id'],
-            iid=self.merge_request_info['iid'],
-            project_id=self.merge_request_info['project_id'],
-            approvals_left=0,
-        )
-        api.add_approvals(self.approvals_info)
-        api.add_transition(
-            GET('/projects/1234/repository/branches/master'),
-            Ok({'commit': {'id': self.initial_master_sha}}),
-        )
         api.add_transition(
             GET('/projects/1234/repository/branches/master'),
             Ok({'commit': {'id': self.rewritten_sha}}),
@@ -166,7 +115,7 @@ class MockLab(object):
 class TestUpdateAndAccept(object):
 
     def setup_method(self, _method):
-        self.mocklab = MockLab()
+        self.mocklab = SingleJobMockLab()
         self.api = self.mocklab.api
 
     def make_job(self, options=None):
