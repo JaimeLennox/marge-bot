@@ -5,7 +5,6 @@ from collections import namedtuple
 from datetime import datetime, timedelta
 
 from . import git
-from .commit import Commit
 from .interval import IntervalUnion
 from .project import Project
 from .user import User

@@ -41,16 +41,16 @@ class TestJob(object):
             assert r_source_project is project_class.fetch_by_id.return_value
 
     def test_get_mr_ci_status(self):
-        with patch('marge.job.Commit') as commit_class:
-            commit_class.fetch_by_id.return_value = Mock(status='success')
+        with patch('marge.job.Pipeline') as pipeline_class:
+            pipeline_class.pipelines_by_branch.return_value = [Mock(sha='abc', status='success')]
             merge_job = self.get_merge_job()
-            merge_request = Mock()
+            merge_request = Mock(sha='abc')
 
             r_ci_status = merge_job.get_mr_ci_status(merge_request)
 
-            commit_class.fetch_by_id.assert_called_once_with(
+            pipeline_class.pipelines_by_branch.assert_called_once_with(
                 merge_request.source_project_id,
-                merge_request.sha,
+                merge_request.source_branch,
                 merge_job._api,
             )
             assert r_ci_status == 'success'
